@@ -23,5 +23,38 @@ export default class Conductor {
             this.eventBus.emit("level:change", this.segment[this.segmentIndex].level);
             this.segmentIndex ++;
         }
+
+        if(this.segment.length === 0) return;
+        const activeIndex = Math.max(0, this.segmentIndex - 1);
+        let startIndex = activeIndex;
+        while(
+            startIndex > 0 &&
+            this.segment[startIndex - 1].level === this.segment[activeIndex].level
+        ){
+            startIndex--;
+        }
+
+        let nextIndex = startIndex + 1;
+        while(
+            nextIndex < this.segment.length &&
+            this.segment[nextIndex].level === this.segment[startIndex].level
+        ){
+            nextIndex++;
+        }
+
+        const current = this.segment[startIndex];
+        const next = this.segment[nextIndex];
+        let level = current.level;
+
+        if(next){
+            const duration = next.time - current.time;
+            const progress = duration > 0
+                ? Math.min(1, Math.max(0, (elapsed - current.time) / duration))
+                : 1;
+            const easedProgress = 1 - Math.pow(1 - progress, 1.3);
+            level += (next.level - current.level) * easedProgress;
+        }
+
+        this.eventBus.emit("level:progress", level);
     }
 }

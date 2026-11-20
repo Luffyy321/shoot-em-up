@@ -23,12 +23,11 @@ import Conductor from "./Conductor.js";
   const pixiContainer = document.getElementById("pixi-container");
   pixiContainer.appendChild(app.canvas);
 
-  const reloadZoneHeight = 24;
+  const reloadZoneHeight = 96;
   const reloadZone = new Graphics();
-  let currentLevel = 0;
+  let currentLevel = loudness.length > 0 ? loudness[0].level : 0;
   const drawReloadZone = (level) => {
-    currentLevel = level;
-    const y = (app.screen.height - reloadZoneHeight) * (1 - currentLevel / 10);
+    const y = (app.screen.height - reloadZoneHeight) * (1 - level / 10);
     reloadZone
       .clear()
       .rect(0, y, app.screen.width, reloadZoneHeight)
@@ -47,8 +46,9 @@ import Conductor from "./Conductor.js";
   let general = new eventBus();
   let conductor = new Conductor(general, beatMap, loudness);
 
-  general.on("level:change", (level) => {
-    drawReloadZone(level);
+  general.on("level:progress", (level) => {
+    currentLevel = level;
+    drawReloadZone(currentLevel);
   });
 
   let inputManager = new InputManager();
@@ -62,6 +62,21 @@ import Conductor from "./Conductor.js";
   app.stage.addChild(projectilManager.body);
 
   let enemies = [];
+  let score = 0;
+  const scoreDisplay = document.getElementById("score");
+
+  general.on("projectile:hit", ({ projectile, target }) => {
+    const enemyIndex = enemies.indexOf(target);
+    if (projectile.sens !== player.sens || enemyIndex === -1) return;
+
+    enemies.splice(enemyIndex, 1);
+    collisionManager.removeTarget(target);
+    app.stage.removeChild(target.body);
+
+    score += 10;
+    scoreDisplay.textContent = `Score : ${score}`;
+  });
+
   general.on("beat:quarter", ()=> {
     let enemy = new Enemy(projectilManager, enemyTexture, laserTexture, -1);
     enemies.push(enemy);
@@ -84,9 +99,10 @@ import Conductor from "./Conductor.js";
   let cooldown = 0.5;
   let lastShotTime = 0;
 
-  const gameLoop = (time) => {
+  const gameLoop = () => {
     const elapsed = analyser.audioContext.currentTime - startTime;
     conductor.update(elapsed);
+
     if (coolingdown) {
       let actualTime = performance.now();
       if ((actualTime - lastShotTime) / 1000 > cooldown) {

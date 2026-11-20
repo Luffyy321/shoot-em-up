@@ -18,7 +18,7 @@ export default class Analyser {
     }
 
     async getLoudness() {
-        const segmentCount = 20;
+        const segmentCount = 80;
         await this.getAudio();
         const signal = this.essentia.audioBufferToMonoSignal(this.buffer);
         const segmentDuration = this.buffer.duration / segmentCount;

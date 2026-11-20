@@ -7,15 +7,53 @@ import Enemy from "./Enemy.js";
 import eventBus from "./eventBus.js";
 import Analyser from "./Analyser.js";
 import Conductor from "./Conductor.js";
+import Laser from "./Laser.js";
+
+const LEVELS = [
+  { id: "firestarter", name: "Firestarter" },
+  { id: "nevergoingback", name: "Never going back" },
+  { id: "watchme", name: "Watch me" },
+];
+
+// cast() reçoit { fire(dx, dy), enemies, kill(enemy) }
+const CLASSES = [
+  { name: "Mage", desc: "éventail", color: 0x66ccff, cast: ({ fire }) => [-200, -100, 0, 100, 200].forEach((dy) => fire(0, dy)) },
+  { name: "Archer", desc: "rafale", color: 0x66ff88, cast: ({ fire }) => [0, 1, 2, 3, 4].forEach((i) => setTimeout(() => fire(0, 0), i * 100)) },
+  { name: "Guerrier", desc: "onde de choc", color: 0xff6666, cast: ({ enemies, kill }) => [...enemies].forEach(kill) },
+  { name: "Assassin", desc: "exécution", color: 0xcc66ff, cast: ({ enemies, kill }) => enemies.slice(0, 3).forEach(kill) },
+];
 
 
 (async () => {
   const startButton = document.getElementById("start-button");
-  startButton.disabled = false;
 
-  const analyser = new Analyser("/musics/firestarter.mp3");
+  // menu : choix de la classe puis du niveau (le clic sur un niveau lance l'analyse)
+  const menu = document.getElementById("menu");
+  const classesBox = document.getElementById("classes");
+  const addButton = (box, text, onClick) => {
+    const b = document.createElement("button");
+    b.textContent = text;
+    b.onclick = () => onClick(b);
+    box.append(b);
+  };
+  let classe = CLASSES[0];
+  CLASSES.forEach((c) =>
+    addButton(classesBox, `${c.name} (${c.desc})`, (b) => {
+      classe = c;
+      for (const x of classesBox.children) x.classList.toggle("selected", x === b);
+    })
+  );
+  classesBox.firstChild.classList.add("selected");
+  const niveau = await new Promise((resolve) =>
+    LEVELS.forEach((l) => addButton(document.getElementById("levels"), l.name, () => resolve(l)))
+  );
+  menu.textContent = "Analyse de la musique...";
+
+  const analyser = new Analyser(`/musics/${niveau.id}.mp3`);
   const beatMap = await analyser.getBeatMap();
   const loudness = await analyser.getLoudness();
+  menu.remove();
+  startButton.disabled = false;
 
   const app = new Application();
 
@@ -39,6 +77,12 @@ import Conductor from "./Conductor.js";
   app.stage.addChild(reloadZone);
   window.addEventListener("resize", () => drawReloadZone(currentLevel));
 
+  // jauge du sort : se recharge quand le joueur est dans la barre orange (qui suit le volume)
+  let charge = 0;
+  const chargeBar = new Graphics();
+  chargeBar.zIndex = 2;
+  app.stage.addChild(chargeBar);
+
   const vaisseauTexture = await Assets.load("/assets/Ahri.png");
   const laserTexture = await Assets.load("/assets/laser_bleu.png");
   const enemyTexture = await Assets.load("/assets/Sbire_range.png");
@@ -55,6 +99,14 @@ import Conductor from "./Conductor.js";
   let projectilManager = new ProjectilManager();
   let collisionManager = new CollisionManager(projectilManager, general);
   let player = new Player(inputManager, projectilManager, vaisseauTexture, laserTexture, 1);
+  player.body.tint = classe.color;
+  // chaque tir coûte 5 de jauge, impossible de tirer si elle est trop basse
+  const baseShoot = player.shoot.bind(player);
+  player.shoot = () => {
+    if (charge < 5) return;
+    charge -= 5;
+    baseShoot();
+  };
   collisionManager.addTarget(player);
   let startTime = null;
   app.stage.addChild(player.body);
@@ -65,20 +117,24 @@ import Conductor from "./Conductor.js";
   let score = 0;
   const scoreDisplay = document.getElementById("score");
 
-  general.on("projectile:hit", ({ projectile, target }) => {
-    const enemyIndex = enemies.indexOf(target);
-    if (projectile.sens !== player.sens || enemyIndex === -1) return;
+  const kill = (enemy) => {
+    enemies.splice(enemies.indexOf(enemy), 1);
+    collisionManager.removeTarget(enemy);
+    app.stage.removeChild(enemy.body);
 
-    enemies.splice(enemyIndex, 1);
-    collisionManager.removeTarget(target);
-    app.stage.removeChild(target.body);
-
-    score += 10;
+    score += enemy.points;
     scoreDisplay.textContent = `Score : ${score}`;
+  };
+  const fire = (dx, dy) =>
+    projectilManager.Spawn(new Laser({ x: player.body.x + dx, y: player.body.y + dy }, laserTexture, 1));
+
+  general.on("projectile:hit", ({ projectile, target }) => {
+    if (projectile.sens !== player.sens || !enemies.includes(target)) return;
+    if (--target.hp <= 0) kill(target);
   });
 
   general.on("beat:quarter", ()=> {
-    let enemy = new Enemy(projectilManager, enemyTexture, laserTexture, -1);
+    let enemy = new Enemy(projectilManager, enemyTexture, laserTexture, -1, Math.floor(Math.random() * 3));
     enemies.push(enemy);
     collisionManager.addTarget(enemy);
     app.stage.addChild(enemy.body);
@@ -118,6 +174,20 @@ import Conductor from "./Conductor.js";
       lastShotTime = performance.now();
     }
 
+    const zone = reloadZone.getBounds();
+    const p = player.body.getBounds();
+    if (p.bottom > zone.top && p.top < zone.bottom) charge = Math.min(100, charge + 0.3);
+    if (charge >= 100 && inputManager.isDown("e")) {
+      classe.cast({ fire, enemies, kill });
+      charge -= 100;
+    }
+    chargeBar
+      .clear()
+      .rect(16, 56, 200, 14)
+      .stroke({ width: 2, color: 0xffffff })
+      .rect(16, 56, charge * 2, 14)
+      .fill(charge >= 100 ? 0x00ff88 : 0xff7f50);
+
     player.update();
     projectilManager.update();
     for (const enemy of enemies) {
@@ -137,7 +207,7 @@ import Conductor from "./Conductor.js";
     source.buffer = analyser.buffer;
     source.connect(context.destination);
 
-    backgroundVideo.src = "/background/firestarter_clip_80p.mp4";
+    backgroundVideo.src = `/background/${niveau.id}_clip_80p.mp4`;
     backgroundVideo.className = "background-video";
     backgroundVideo.autoplay = true;
     backgroundVideo.muted = true;

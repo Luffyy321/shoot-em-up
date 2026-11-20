@@ -1,18 +1,30 @@
 import { Sprite } from 'pixi.js';
 import Laser from './Laser';
 
+// 0 : sbire à distance (celui d'origine), 1 : sbire mêlée (rapide, ne tire pas), 2 : sbire canon (gros, 3 PV)
+const TYPES = [
+    { size: 80, speedX: -0.5, speedY: 5, tint: 0xffffff, hp: 1, points: 10, shoots: true },
+    { size: 70, speedX: -4, speedY: 2, tint: 0xff5555, hp: 1, points: 10, shoots: false },
+    { size: 130, speedX: -0.3, speedY: 1, tint: 0x66aaff, hp: 3, points: 30, shoots: true },
+];
+
 export default class Enemy {
-    constructor(projectilManager, texture, laserTexture, sens) {
+    constructor(projectilManager, texture, laserTexture, sens, type = 0) {
+        const t = TYPES[type];
         this.projectilManager = projectilManager;
         this.laserTexture = laserTexture;
         this.sens = sens;
         this.body = new Sprite(texture);
-        this.body.width = 80;
-        this.body.height = 80;
+        this.body.width = t.size;
+        this.body.height = t.size;
+        this.body.tint = t.tint;
         this.body.x = window.innerWidth - this.body.width - 30;
         this.body.y = 120;
-        this.speedX = -0.5;
-        this.speedY = 5;
+        this.speedX = t.speedX;
+        this.speedY = t.speedY;
+        this.hp = t.hp;
+        this.points = t.points;
+        this.shoots = t.shoots;
         this.directionY = 1;
     }
 
@@ -38,6 +50,7 @@ export default class Enemy {
     }
 
     shoot(){
+        if (!this.shoots) return;
         this.projectilManager.Spawn(new Laser(this.getPosition(), this.laserTexture, -1));      
 
     }
